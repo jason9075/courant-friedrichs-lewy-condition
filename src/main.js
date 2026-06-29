@@ -113,6 +113,7 @@ style.textContent = `
   .modal-actions { display: flex; gap: 0.5rem; align-items: center; }
   .modal-body { display: grid; gap: 0.85rem; line-height: 1.75; color: var(--nord5); font-size: 0.92rem; }
   .modal-body h3 { color: var(--nord8); font-size: 0.95rem; margin-top: 0.3rem; }
+  .modal-body ul { padding-left: 1.2rem; list-style: disc; display: grid; gap: 0.3rem; }
   .modal-body pre[class*="language-"] { border-radius: 8px; overflow-x: auto; font-size: 0.8rem; margin: 0; }
 `;
 document.head.appendChild(style);
@@ -527,6 +528,14 @@ const modalCopy = {
   en: `
     <p>This lab solves the one-dimensional <strong>advection equation</strong>, which transports a profile to the right at a constant speed $c$ without changing its shape:</p>
     <p>$$ \\frac{\\partial u}{\\partial t} + c\\,\\frac{\\partial u}{\\partial x} = 0 $$</p>
+    <h3>What it means in the real world</h3>
+    <p>This is the <strong>linear advection (transport) equation</strong>: a quantity $u$ carried by a steady, one-way flow at speed $c$, keeping its shape. Picture:</p>
+    <ul>
+      <li>a patch of <strong>dye carried downstream</strong> by a flowing river,</li>
+      <li><strong>smoke drifting on a steady wind</strong>,</li>
+      <li>a slug of <strong>warm water swept along by a current</strong> — heat <em>carried by the flow</em>, not heat conduction.</li>
+    </ul>
+    <p>It is <em>not</em> heat conduction ($u_t = D\\,u_{xx}$, which spreads and decays in place), nor an oscillating water/sound wave ($u_{tt} = c^2 u_{xx}$, which travels both ways). The slow decay of the blue peak is an accidental diffusion term the discretization adds — a faint "conduction" leaking into otherwise pure transport.</p>
     <h3>Explicit upwind scheme</h3>
     <p>Discretising on a grid with spacing $\\Delta x$ and time step $\\Delta t$, the upwind finite-difference update is:</p>
     <p>$$ u_i^{\\,n+1} = u_i^{\\,n} - \\sigma\\left(u_i^{\\,n} - u_{i-1}^{\\,n}\\right), \\qquad \\sigma = \\frac{c\\,\\Delta t}{\\Delta x} $$</p>
@@ -544,6 +553,14 @@ for (let i = 0; i &lt; n; i++) {
   zhTW: `
     <p>這個實驗求解一維<strong>平流方程式（advection equation）</strong>：它讓一個波形以固定速度 $c$ 向右傳播，理論上形狀不會改變：</p>
     <p>$$ \\frac{\\partial u}{\\partial t} + c\\,\\frac{\\partial u}{\\partial x} = 0 $$</p>
+    <h3>它在現實中代表什麼</h3>
+    <p>這是<strong>線性平流（輸運）方程式</strong>：某個量 $u$ 被一股固定速度 $c$ 的單向流體載著走，形狀不變。可以想成：</p>
+    <ul>
+      <li>河水把一團<strong>染料往下游帶</strong>，</li>
+      <li><strong>煙隨著穩定的風飄移</strong>，</li>
+      <li>一團<strong>溫水被水流帶著跑</strong>——熱是被流體<em>載著走</em>，不是熱傳導。</li>
+    </ul>
+    <p>它<em>不是</em>熱傳導（$u_t = D\\,u_{xx}$，會原地散開、衰減），也不是會雙向振盪的水波／聲波（$u_{tt} = c^2 u_{xx}$）。你看到藍線波峰緩緩下降，是離散化不小心加進的擴散項——等於在純輸運裡滲進了一點「熱傳導」的味道。</p>
     <h3>顯式迎風格式（Explicit Upwind）</h3>
     <p>在間距為 $\\Delta x$、時間步長為 $\\Delta t$ 的網格上離散化，迎風有限差分的更新公式為：</p>
     <p>$$ u_i^{\\,n+1} = u_i^{\\,n} - \\sigma\\left(u_i^{\\,n} - u_{i-1}^{\\,n}\\right), \\qquad \\sigma = \\frac{c\\,\\Delta t}{\\Delta x} $$</p>

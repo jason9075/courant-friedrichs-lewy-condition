@@ -250,11 +250,23 @@ function drawWave() {
   const uToPy = (val) => h - pad - ((val - U_MIN) / (U_MAX - U_MIN)) * (h - 2 * pad);
 
   // baseline (u = 0)
+  const baseY = uToPy(0);
   waveCtx.strokeStyle = 'rgba(76, 86, 106, 0.7)';
   waveCtx.lineWidth = 1;
   waveCtx.beginPath();
-  waveCtx.moveTo(0, uToPy(0));
-  waveCtx.lineTo(w, uToPy(0));
+  waveCtx.moveTo(0, baseY);
+  waveCtx.lineTo(w, baseY);
+  waveCtx.stroke();
+
+  // grid ticks on the baseline — the N discrete sampling locations (Δx spacing)
+  const step = L / (params.n - 1);
+  waveCtx.strokeStyle = 'rgba(76, 86, 106, 0.55)';
+  waveCtx.beginPath();
+  for (let i = 0; i < params.n; i++) {
+    const px = xToPx(i * step);
+    waveCtx.moveTo(px, baseY - 3);
+    waveCtx.lineTo(px, baseY + 3);
+  }
   waveCtx.stroke();
 
   // analytic / exact pulse, translated by c·t
@@ -275,16 +287,25 @@ function drawWave() {
   waveCtx.beginPath();
   waveCtx.rect(0, 0, w, h);
   waveCtx.clip();
-  waveCtx.strokeStyle = diverged ? '#BF616A' : '#88C0D0';
+  const numColor = diverged ? '#BF616A' : '#88C0D0';
+  waveCtx.strokeStyle = numColor;
   waveCtx.lineWidth = 2;
   waveCtx.beginPath();
-  const step = L / (params.n - 1);
   for (let i = 0; i < params.n; i++) {
     const px = xToPx(i * step);
     const py = uToPy(u[i]);
     i === 0 ? waveCtx.moveTo(px, py) : waveCtx.lineTo(px, py);
   }
   waveCtx.stroke();
+
+  // grid nodes — the discrete points the FDM actually solves on
+  const nodeR = params.n > 120 ? 1.6 : 2.4;
+  waveCtx.fillStyle = numColor;
+  for (let i = 0; i < params.n; i++) {
+    waveCtx.beginPath();
+    waveCtx.arc(xToPx(i * step), uToPy(u[i]), nodeR, 0, Math.PI * 2);
+    waveCtx.fill();
+  }
   waveCtx.restore();
 }
 

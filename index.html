@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CFL Lab — Courant–Friedrichs–Lewy Condition</title>
+  <script type="module" src="/src/main.js"></script>
+</head>
+<body>
+
+  <div id="info">CFL Lab | Courant–Friedrichs–Lewy Condition</div>
+
+  <div id="toolbar" aria-label="Tool controls">
+    <button class="preset" data-scenario="balanced" type="button">Scenario 1 · σ = 1</button>
+    <button class="preset" data-scenario="dissipation" type="button">Scenario 2 · σ = 0.1</button>
+    <button class="preset" data-scenario="collapse" type="button">Scenario 3 · σ = 1.05</button>
+    <span class="divider" aria-hidden="true"></span>
+    <button id="reset-button" type="button">Reset</button>
+    <button id="pause-button" type="button">Pause</button>
+    <button id="open-math" class="icon-button" type="button" aria-haspopup="dialog" aria-controls="math-modal" aria-label="Explain the math">💡</button>
+  </div>
+
+  <main id="stage">
+    <section id="plots">
+      <div class="panel">
+        <span class="panel-title">Live Wave — Advection of a Square Pulse</span>
+        <div class="canvas-wrap">
+          <canvas id="wave-canvas"></canvas>
+          <div id="warning" role="alert" hidden>⚠️ System crashed! Numerical solution diverged to infinity!</div>
+          <div id="legend">
+            <span><i class="swatch swatch-exact"></i>Analytic (exact)</span>
+            <span><i class="swatch swatch-num"></i>Numerical (FDM, upwind)</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <span class="panel-title">Domain of Dependence — Micro View</span>
+        <div class="canvas-wrap micro">
+          <canvas id="micro-canvas"></canvas>
+        </div>
+        <p id="micro-note">Information travels physically at speed c. The CFL condition asks whether the numerical stencil can reach that information.</p>
+      </div>
+    </section>
+
+    <aside id="dashboard">
+      <h2>Courant Dashboard</h2>
+
+      <div class="control">
+        <label for="c-slider">Wave speed <em>c</em></label>
+        <input id="c-slider" type="range" min="0.1" max="3" step="0.05" value="1" />
+        <output id="c-value">1.00</output>
+      </div>
+
+      <div class="control">
+        <label for="dt-slider">Time step <em>Δt</em></label>
+        <input id="dt-slider" type="range" min="0.0005" max="0.02" step="0.0001" value="0.008" />
+        <output id="dt-value">0.0080</output>
+      </div>
+
+      <div class="control">
+        <label for="n-slider">Grid points <em>N</em></label>
+        <input id="n-slider" type="range" min="20" max="200" step="1" value="101" />
+        <output id="n-value">101</output>
+      </div>
+
+      <label id="autofix-row">
+        <input id="autofix" type="checkbox" />
+        <span>Auto-fix Δt (adaptive time-stepping)</span>
+      </label>
+
+      <div id="sigma-box">
+        <div id="sigma-formula" aria-hidden="true"></div>
+        <div id="sigma-numeric"></div>
+        <div id="sigma-status">Stable</div>
+      </div>
+
+      <p class="dx-note">Δx = L / (N − 1), with domain length L = 1.<br /><span id="dx-value"></span></p>
+    </aside>
+  </main>
+
+  <div id="math-modal" role="dialog" aria-modal="true" aria-labelledby="math-title" hidden>
+    <div class="modal-panel">
+      <div class="modal-header">
+        <h2 id="math-title">The Math Behind the CFL Condition</h2>
+        <div class="modal-actions">
+          <button id="language-toggle" class="modal-toggle" type="button">Eng/中</button>
+          <button id="close-math" class="modal-toggle" type="button" aria-label="Close">Close</button>
+        </div>
+      </div>
+      <div id="math-content" class="modal-body"></div>
+    </div>
+  </div>
+
+</body>
+</html>

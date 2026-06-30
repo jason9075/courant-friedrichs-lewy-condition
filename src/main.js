@@ -93,10 +93,10 @@ style.textContent = `
   .swatch-exact { background: var(--nord14); }
   .swatch-num { background: var(--nord8); }
   #warning {
-    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    position: absolute; top: 0.5rem; left: 50%; transform: translateX(-50%);
     background: rgba(191, 97, 106, 0.92); color: var(--nord6);
-    padding: 0.8rem 1.2rem; border-radius: 10px; font-size: 0.95rem; font-weight: 700;
-    text-align: center; animation: blink 0.7s steps(2, start) infinite; z-index: 5;
+    padding: 0.35rem 0.8rem; border-radius: 999px; font-size: 0.78rem; font-weight: 700;
+    text-align: center; white-space: nowrap; animation: blink 0.7s steps(2, start) infinite; z-index: 5;
   }
   #warning[hidden] { display: none; }
   #micro-note { font-size: 0.72rem; color: var(--nord4); line-height: 1.5; }
@@ -143,8 +143,8 @@ style.textContent = `
 
   @keyframes blink { 50% { opacity: 0.35; } }
 
-  #math-modal { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(46, 52, 64, 0.78); z-index: 50; }
-  #math-modal[hidden] { display: none; }
+  #math-modal, #micro-modal { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(46, 52, 64, 0.78); z-index: 50; }
+  #math-modal[hidden], #micro-modal[hidden] { display: none; }
   .modal-panel {
     width: min(760px, calc(100vw - 2rem)); max-height: calc(100vh - 2rem); overflow: auto;
     background: var(--nord1); border: 1px solid var(--nord3); border-radius: 20px;

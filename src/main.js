@@ -44,7 +44,7 @@ style.textContent = `
     display: grid; grid-template-columns: 1fr 320px; gap: 1rem;
     height: 100vh; padding: 4rem 1rem 1rem; align-items: stretch;
   }
-  #plots { display: grid; grid-template-rows: 1.35fr 1fr; gap: 1rem; min-width: 0; }
+  #plots { display: grid; grid-template-rows: 1fr; gap: 1rem; min-width: 0; }
   .panel {
     display: flex; flex-direction: column; gap: 0.5rem;
     background: var(--nord1); border: 1px solid var(--nord3); border-radius: 14px;
@@ -53,10 +53,42 @@ style.textContent = `
   .panel-title { color: var(--nord8); font-size: 0.78rem; letter-spacing: 0.02em; }
   .canvas-wrap { position: relative; flex: 1; min-height: 0; }
   .canvas-wrap canvas { width: 100%; height: 100%; display: block; }
-  #legend {
-    position: absolute; top: 0.4rem; right: 0.6rem; display: flex; gap: 0.9rem;
-    font-size: 0.72rem; color: var(--nord4);
+  #wave-overlay {
+    position: absolute; top: 0.4rem; right: 0.6rem; z-index: 4;
+    display: flex; flex-direction: column; align-items: flex-end; gap: 0.5rem;
   }
+  #legend { display: flex; gap: 0.9rem; font-size: 0.72rem; color: var(--nord4); }
+  .toggle {
+    font: inherit; font-size: 0.72rem; cursor: pointer;
+    display: inline-flex; align-items: center; gap: 0.4rem;
+    border: 1px solid var(--nord3); border-radius: 999px;
+    background: var(--nord1); color: var(--nord4);
+    padding: 0.3rem 0.7rem;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+  }
+  .toggle::before {
+    content: ''; width: 0.6rem; height: 0.6rem; border-radius: 50%;
+    background: var(--nord3); transition: background 0.15s;
+  }
+  .toggle[aria-pressed="true"] { background: var(--nord8); color: var(--nord0); border-color: var(--nord8); }
+  .toggle[aria-pressed="true"]::before { background: var(--nord0); }
+  #slice-control {
+    display: flex; gap: 0.45rem; align-items: center; font-size: 0.7rem; color: var(--nord4);
+    background: rgba(59, 66, 82, 0.85); border: 1px solid var(--nord3);
+    border-radius: 999px; padding: 0.25rem 0.65rem;
+  }
+  #slice-control[hidden] { display: none; }
+  #slice-control input[type="range"] { width: 88px; accent-color: var(--nord8); cursor: pointer; }
+  #slice-step-val { color: var(--nord8); min-width: 2.6ch; text-align: right; }
+  #slice-tip {
+    position: absolute; pointer-events: none; z-index: 6; white-space: nowrap;
+    background: rgba(46, 52, 64, 0.95); border: 1px solid var(--nord3);
+    border-radius: 6px; padding: 0.3rem 0.5rem; font-size: 0.7rem; color: var(--nord6);
+  }
+  #slice-tip[hidden] { display: none; }
+  #timeline { display: flex; gap: 0.7rem; align-items: center; padding: 0.5rem 0.2rem 0; }
+  #timeline input[type="range"] { flex: 1; accent-color: var(--nord8); cursor: pointer; }
+  #time-label { font-size: 0.72rem; color: var(--nord7); white-space: nowrap; min-width: 14ch; text-align: right; }
   .swatch { display: inline-block; width: 0.85rem; height: 0.18rem; margin-right: 0.3rem; vertical-align: middle; border-radius: 2px; }
   .swatch-exact { background: var(--nord14); }
   .swatch-num { background: var(--nord8); }
@@ -98,6 +130,16 @@ style.textContent = `
   #sigma-status { font-size: 0.78rem; margin-top: 0.2rem; letter-spacing: 0.05em; }
   .dx-note { font-size: 0.72rem; color: var(--nord4); line-height: 1.5; }
   .dx-note span { color: var(--nord7); }
+  .dash-button {
+    font: inherit; font-size: 0.82rem; cursor: pointer; margin-top: 0.2rem;
+    border: 1px solid var(--nord3); border-radius: 999px;
+    background: var(--nord2); color: var(--nord6);
+    padding: 0.6rem 0.8rem; transition: background 0.15s;
+  }
+  .dash-button:hover { background: var(--nord3); }
+  .micro-modal-body { display: grid; gap: 0.85rem; }
+  .micro-stage { position: relative; width: 100%; height: 340px; }
+  .micro-stage canvas { width: 100%; height: 100%; display: block; }
 
   @keyframes blink { 50% { opacity: 0.35; } }
 
@@ -126,6 +168,8 @@ const DIVERGE_THRESHOLD = 6; // |u| beyond this counts as numerical blow-up
 const TARGET_SIGMA = 0.9; // auto-fix keeps σ at this safe value
 const U_MIN = -0.6; // plot vertical range
 const U_MAX = 1.6;
+const STACK_WINDOW = 40; // recent time steps shown in the waterfall (front = newest)
+const MAX_HISTORY = 4000; // hard cap on recorded snapshots (memory safety)
 
 /**
  * @typedef {Object} SimParams
@@ -141,9 +185,18 @@ let u = new Float64Array(params.n); // numerical field, current step
 let scratch = new Float64Array(params.n); // reused buffer for the next step
 let simTime = 0; // accumulated physical time
 let diverged = false;
+let completed = false; // pulse has crossed the domain once → auto-paused
 let running = true;
 let autofix = false;
 let modalLanguage = 'en';
+let microOpen = false; // micro-view modal visibility (gates its redraw)
+let stackMode = false; // Live Wave waterfall (time-stack) view
+/** @type {Float64Array[]} one snapshot per Δt step, oldest first (index k ↔ t = k·Δt). */
+let history = [];
+let scrubIndex = null; // when set, the timeline is being scrubbed to this step
+let sliceStep = 1; // Δt steps between waterfall slices (higher = coarser)
+let waterfallView = null; // last waterfall projection, for hover hit-testing
+let hoverLi = null; // history index of the hovered waterfall slice
 
 /* ─── DOM refs ────────────────────────────────────────────────────── */
 const waveCanvas = /** @type {HTMLCanvasElement} */ (document.getElementById('wave-canvas'));
@@ -168,11 +221,22 @@ const microNote = document.getElementById('micro-note');
 
 const pauseButton = document.getElementById('pause-button');
 const resetButton = document.getElementById('reset-button');
+const stackButton = document.getElementById('stack-button');
+const legend = document.getElementById('legend');
+const timeSlider = document.getElementById('time-slider');
+const timeLabel = document.getElementById('time-label');
+const sliceControl = document.getElementById('slice-control');
+const sliceStepInput = document.getElementById('slice-step');
+const sliceStepVal = document.getElementById('slice-step-val');
+const sliceTip = document.getElementById('slice-tip');
 const openMathButton = document.getElementById('open-math');
 const closeMathButton = document.getElementById('close-math');
 const languageToggle = document.getElementById('language-toggle');
 const mathModal = document.getElementById('math-modal');
 const mathContent = document.getElementById('math-content');
+const openMicroButton = document.getElementById('open-micro');
+const closeMicroButton = document.getElementById('close-micro');
+const microModal = document.getElementById('micro-modal');
 
 /* ─── Derived quantities ──────────────────────────────────────────── */
 /** @returns {number} Grid spacing Δx = L / (N − 1). */
@@ -182,13 +246,13 @@ const sigma = () => (params.c * params.dt) / dx();
 
 /* ─── Initial / exact solution ────────────────────────────────────── */
 /**
- * Top-hat (square) pulse evaluated on the periodic domain.
- * @param {number} x  Position in [0, L).
+ * Top-hat (square) pulse on the real line (no periodic wrap): once it is
+ * advected past the right boundary it simply leaves the domain.
+ * @param {number} x  Position.
  * @returns {number}
  */
 function pulse(x) {
-  const xm = ((x % L) + L) % L;
-  return xm >= PULSE_LEFT && xm <= PULSE_RIGHT ? 1 : 0;
+  return x >= PULSE_LEFT && x <= PULSE_RIGHT ? 1 : 0;
 }
 
 /** Reset the numerical field to the initial pulse and clear divergence. */
@@ -199,7 +263,17 @@ function resetField() {
   for (let i = 0; i < params.n; i++) u[i] = pulse(i * step);
   simTime = 0;
   diverged = false;
+  completed = false;
   warningEl.hidden = true;
+  history = [Float64Array.from(u)];
+}
+
+/** @returns {number} Physical time for the pulse to fully exit the right edge. */
+const runDuration = () => (L - PULSE_LEFT) / params.c;
+
+/** Record the current field after a step (one snapshot per Δt). */
+function captureStep() {
+  if (history.length < MAX_HISTORY) history.push(Float64Array.from(u));
 }
 
 /* ─── Finite-difference step (explicit upwind, periodic BC) ───────────
@@ -210,10 +284,11 @@ function resetField() {
 function stepOnce() {
   const s = sigma();
   const n = params.n;
-  for (let i = 0; i < n; i++) {
-    const left = u[(i - 1 + n) % n];
-    scratch[i] = u[i] - s * (u[i] - left);
+  scratch[0] = 0; // inflow boundary: nothing new enters from the left
+  for (let i = 1; i < n; i++) {
+    scratch[i] = u[i] - s * (u[i] - u[i - 1]);
   }
+  // right boundary (i = n-1) only reads interior nodes → natural outflow
   [u, scratch] = [scratch, u];
   simTime += params.dt;
 
@@ -243,8 +318,16 @@ function fitCanvas(canvas, ctx) {
 }
 
 function drawWave() {
+  if (stackMode) {
+    drawWaterfall();
+    return;
+  }
   const { width: w, height: h } = fitCanvas(waveCanvas, waveCtx);
   waveCtx.clearRect(0, 0, w, h);
+
+  // scrubbing shows a recorded slice; otherwise the live field
+  const field = scrubIndex !== null ? history[scrubIndex] : u;
+  const tNow = scrubIndex !== null ? scrubIndex * params.dt : simTime;
 
   const pad = 14;
   const xToPx = (x) => (x / L) * w;
@@ -277,7 +360,7 @@ function drawWave() {
   const samples = 600;
   for (let k = 0; k <= samples; k++) {
     const x = (k / samples) * L;
-    const val = pulse(x - params.c * simTime);
+    const val = pulse(x - params.c * tNow);
     const py = uToPy(val);
     k === 0 ? waveCtx.moveTo(xToPx(x), py) : waveCtx.lineTo(xToPx(x), py);
   }
@@ -294,7 +377,7 @@ function drawWave() {
   waveCtx.beginPath();
   for (let i = 0; i < params.n; i++) {
     const px = xToPx(i * step);
-    const py = uToPy(u[i]);
+    const py = uToPy(field[i]);
     i === 0 ? waveCtx.moveTo(px, py) : waveCtx.lineTo(px, py);
   }
   waveCtx.stroke();
@@ -304,10 +387,112 @@ function drawWave() {
   waveCtx.fillStyle = numColor;
   for (let i = 0; i < params.n; i++) {
     waveCtx.beginPath();
-    waveCtx.arc(xToPx(i * step), uToPy(u[i]), nodeR, 0, Math.PI * 2);
+    waveCtx.arc(xToPx(i * step), uToPy(field[i]), nodeR, 0, Math.PI * 2);
     waveCtx.fill();
   }
   waveCtx.restore();
+
+  if (completed && !diverged) {
+    waveCtx.fillStyle = '#A3BE8C';
+    waveCtx.font = '12px monospace';
+    waveCtx.fillText('✓ Run complete — pulse made one pass. Press Replay or Reset.', 12, 20);
+  }
+}
+
+/* ─── Rendering: waterfall / time-stack (2.5D oblique) ────────────────
+ * Each captured time slice is drawn as a wave line, offset up-and-right
+ * by its age so the time axis appears to recede into the screen:
+ * the earliest slice sits in front, later slices stack behind it.
+ * ------------------------------------------------------------------- */
+function drawWaterfall() {
+  const { width: w, height: h } = fitCanvas(waveCanvas, waveCtx);
+  waveCtx.clearRect(0, 0, w, h);
+
+  const ML = 18, MR = 16, MT = 18, MB = 30;
+  const availW = w - ML - MR;
+  const availH = h - MT - MB;
+  if (availW < 60 || availH < 60) return;
+
+  const depthX = availW * 0.3; // horizontal travel of the time axis
+  const depthY = availH * 0.42; // vertical travel of the time axis
+  const frontW = availW - depthX;
+  const frontH = availH - depthY;
+  const step = L / (params.n - 1);
+  // frac = 0 at the front (newest), 1 at the back (oldest)
+  const projX = (x, frac) => ML + (x / L) * frontW + frac * depthX;
+  const projY = (val, frac) => h - MB - frac * depthY - ((val - U_MIN) / (U_MAX - U_MIN)) * frontH;
+
+  // slices: front = newest, stepping back by `sliceStep`, up to STACK_WINDOW lines
+  const top = scrubIndex !== null ? Math.min(scrubIndex, history.length - 1) : history.length - 1;
+  const slices = [];
+  for (let c = 0; c < STACK_WINDOW; c++) {
+    const li = top - c * sliceStep;
+    if (li < 0) break;
+    slices.push({ li, frac: 0 });
+  }
+  const fdenom = Math.max(1, slices.length - 1);
+  slices.forEach((s, c) => (s.frac = c / fdenom));
+
+  // time-axis arrow: from the back (older) toward the front (newest)
+  waveCtx.strokeStyle = 'rgba(216, 222, 233, 0.45)';
+  waveCtx.lineWidth = 1;
+  waveCtx.beginPath();
+  waveCtx.moveTo(projX(L, 1), projY(0, 1));
+  waveCtx.lineTo(projX(L, 0), projY(0, 0));
+  waveCtx.stroke();
+  waveCtx.fillStyle = '#81A1C1';
+  waveCtx.font = '11px monospace';
+  waveCtx.fillText('t (now)', projX(L, 0) - 32, projY(0, 0) + 15);
+  waveCtx.fillText('x', ML - 2, h - MB + 16);
+
+  // draw back-to-front: oldest first, newest in front on top + highlighted
+  waveCtx.save();
+  waveCtx.beginPath();
+  waveCtx.rect(0, 0, w, h);
+  waveCtx.clip();
+  for (let c = slices.length - 1; c >= 0; c--) {
+    const { li, frac } = slices[c];
+    const snap = history[li];
+    const isFront = c === 0;
+    const alpha = isFront ? 0.98 : 0.22 + 0.7 * (1 - frac);
+    waveCtx.strokeStyle = diverged
+      ? `rgba(191, 97, 106, ${alpha})`
+      : `rgba(136, 192, 208, ${alpha})`;
+    waveCtx.lineWidth = isFront ? 2.2 : 1.2;
+    waveCtx.beginPath();
+    for (let i = 0; i < params.n; i++) {
+      const px = projX(i * step, frac);
+      const py = projY(snap[i], frac);
+      i === 0 ? waveCtx.moveTo(px, py) : waveCtx.lineTo(px, py);
+    }
+    waveCtx.stroke();
+  }
+  // hovered slice drawn last, on top, highlighted
+  const hovered = hoverLi !== null ? slices.find((s) => s.li === hoverLi) : null;
+  if (hovered) {
+    const snap = history[hovered.li];
+    waveCtx.strokeStyle = '#EBCB8B';
+    waveCtx.lineWidth = 2.8;
+    waveCtx.beginPath();
+    for (let i = 0; i < params.n; i++) {
+      const px = projX(i * step, hovered.frac);
+      const py = projY(snap[i], hovered.frac);
+      i === 0 ? waveCtx.moveTo(px, py) : waveCtx.lineTo(px, py);
+    }
+    waveCtx.stroke();
+  }
+  waveCtx.restore();
+
+  // stash projection for hover hit-testing
+  waterfallView = { ML, frontW, depthX, depthY, frontH, MB, h, step, n: params.n, slices };
+
+  waveCtx.fillStyle = '#88C0D0';
+  waveCtx.font = '11px monospace';
+  waveCtx.fillText(
+    `Time-stack — newest in front · ${slices.length} slices × ${sliceStep} step${sliceStep > 1 ? 's' : ''} · t = ${(top * params.dt).toFixed(3)}`,
+    ML,
+    13,
+  );
 }
 
 /* ─── Rendering: domain-of-dependence micro view ──────────────────── */
@@ -453,9 +638,22 @@ function applyAutofix() {
 
 /** Recompute everything that depends on params and restart the field. */
 function refresh({ reinit = true } = {}) {
-  if (reinit) resetField();
+  if (reinit) {
+    resetField();
+    scrubIndex = null;
+    pauseButton.textContent = running ? 'Pause' : 'Resume';
+    updateTimeline();
+  }
   syncLabels();
   updateSigmaReadout();
+}
+
+/** Sync the time-axis slider + label with the current (or scrubbed) time. */
+function updateTimeline() {
+  const idx = scrubIndex !== null ? scrubIndex : Math.max(0, history.length - 1);
+  timeSlider.max = String(Math.max(1, history.length - 1));
+  timeSlider.value = String(idx);
+  timeLabel.textContent = `t = ${(idx * params.dt).toFixed(3)} / ${runDuration().toFixed(3)}  ·  step ${idx}`;
 }
 
 /* ─── Scenario presets ────────────────────────────────────────────── */
@@ -504,8 +702,23 @@ autofixBox.addEventListener('change', () => {
 });
 
 pauseButton.addEventListener('click', () => {
+  if (completed) {
+    refresh(); // replay from the start
+    running = true;
+    pauseButton.textContent = 'Pause';
+    return;
+  }
   running = !running;
   pauseButton.textContent = running ? 'Pause' : 'Resume';
+  if (running) scrubIndex = null; // leave scrub → resume live
+});
+
+timeSlider.addEventListener('input', () => {
+  scrubIndex = Math.min(Number(timeSlider.value), history.length - 1);
+  running = false;
+  if (!completed) pauseButton.textContent = 'Resume';
+  updateTimeline();
+  drawWave();
 });
 
 resetButton.addEventListener('click', () => {
@@ -514,13 +727,82 @@ resetButton.addEventListener('click', () => {
   refresh();
 });
 
+stackButton.addEventListener('click', () => {
+  stackMode = !stackMode;
+  stackButton.setAttribute('aria-pressed', String(stackMode));
+  legend.style.display = stackMode ? 'none' : 'flex'; // legend only fits the 2D view
+  sliceControl.hidden = !stackMode;
+  if (!stackMode) {
+    sliceTip.hidden = true;
+    hoverLi = null;
+  }
+  drawWave();
+});
+
+sliceStepInput.addEventListener('input', () => {
+  sliceStep = Math.max(1, Number(sliceStepInput.value));
+  sliceStepVal.textContent = `×${sliceStep}`;
+  drawWave();
+});
+
+// hover a waterfall line → show that slice's info
+waveCanvas.addEventListener('mousemove', (e) => {
+  if (!stackMode || !waterfallView) {
+    sliceTip.hidden = true;
+    if (hoverLi !== null) hoverLi = null;
+    return;
+  }
+  const rect = waveCanvas.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  const my = e.clientY - rect.top;
+  const v = waterfallView;
+  let best = null;
+  let bestD = 14; // px hit threshold
+  for (const s of v.slices) {
+    const snap = history[s.li];
+    if (!snap) continue;
+    for (let i = 0; i < v.n; i++) {
+      const px = v.ML + ((i * v.step) / L) * v.frontW + s.frac * v.depthX;
+      const py = v.h - v.MB - s.frac * v.depthY - ((snap[i] - U_MIN) / (U_MAX - U_MIN)) * v.frontH;
+      const d = Math.hypot(px - mx, py - my);
+      if (d < bestD) {
+        bestD = d;
+        best = s;
+      }
+    }
+  }
+  const newHover = best ? best.li : null;
+  if (newHover !== hoverLi) {
+    hoverLi = newHover;
+    drawWave(); // redraw immediately to show the highlight
+  }
+  if (!best) {
+    sliceTip.hidden = true;
+    return;
+  }
+  const snap = history[best.li];
+  let peak = 0;
+  for (let i = 0; i < snap.length; i++) peak = Math.max(peak, Math.abs(snap[i]));
+  sliceTip.textContent = `step ${best.li} · t = ${(best.li * params.dt).toFixed(3)} · peak |u| = ${peak.toFixed(2)}`;
+  sliceTip.style.left = `${mx + 12}px`;
+  sliceTip.style.top = `${my + 12}px`;
+  sliceTip.hidden = false;
+});
+waveCanvas.addEventListener('mouseleave', () => {
+  sliceTip.hidden = true;
+  if (hoverLi !== null) {
+    hoverLi = null;
+    drawWave();
+  }
+});
+
 for (const btn of document.querySelectorAll('.preset')) {
   btn.addEventListener('click', () => applyScenario(btn.dataset.scenario));
 }
 
 window.addEventListener('resize', () => {
   drawWave();
-  drawMicro();
+  if (microOpen) drawMicro();
 });
 
 /* ─── Math modal (bilingual) ──────────────────────────────────────── */
@@ -604,15 +886,39 @@ mathModal.addEventListener('click', (e) => {
   if (e.target === mathModal) mathModal.hidden = true;
 });
 
+openMicroButton.addEventListener('click', () => {
+  microModal.hidden = false;
+  microOpen = true;
+  drawMicro(); // render immediately now that the canvas has a size
+});
+closeMicroButton.addEventListener('click', () => {
+  microModal.hidden = true;
+  microOpen = false;
+});
+microModal.addEventListener('click', (e) => {
+  if (e.target === microModal) {
+    microModal.hidden = true;
+    microOpen = false;
+  }
+});
+
 /* ─── Animation loop ──────────────────────────────────────────────── */
 function frame() {
   requestAnimationFrame(frame);
-  if (running && !diverged) {
+  if (running && !diverged && !completed) {
     const steps = stepsPerFrame();
-    for (let k = 0; k < steps; k++) stepOnce();
+    for (let k = 0; k < steps; k++) {
+      stepOnce();
+      captureStep();
+    }
+    if (!diverged && simTime >= runDuration()) {
+      completed = true; // one full pass done — freeze for inspection
+      pauseButton.textContent = 'Replay';
+    }
   }
   drawWave();
-  drawMicro();
+  if (scrubIndex === null) updateTimeline();
+  if (microOpen) drawMicro();
 }
 
 /* ─── Boot ────────────────────────────────────────────────────────── */
